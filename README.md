@@ -1,7 +1,7 @@
 
 # 🚀 Notion Hosts 管理
 
-![img.png](img\img.png)
+![img.png](https://github.com/jixn-hu/notion_host_manager/blob/main/img/img.png)
 
 
 一个 **专注于 Notion Hosts 自动优化的本地管理工具**
