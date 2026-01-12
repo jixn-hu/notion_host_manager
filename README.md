@@ -5,7 +5,8 @@
 
 
 一个 **专注于 Notion Hosts 自动优化的本地管理工具**
-支持 **延迟测速选最快 IP、可视化配置、自动/手动更新 hosts、FastAPI + SQLite + Web UI**，并可 **打包为 Windows 单文件 exe**。
+
+支持 延迟测速选最快 IP、可视化配置、自动/手动更新 hosts、FastAPI + SQLite + Web UI。
 
 > 目标：
 > **更快、更稳定地访问 Notion（尤其在国内网络环境）**
