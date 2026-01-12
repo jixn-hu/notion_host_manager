@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notion Hosts 管理器</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+* {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+body {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+}
+
+.glass-card {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+}
+
+.gradient-text {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.status-badge {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: .7;
+    }
+}
+
+textarea:focus { 
+    outline: none !important; 
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3) !important; 
+}
+
+input[type="number"]:focus,
+input[type="checkbox"]:focus {
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3) !important;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-secondary {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    transition: all 0.3s ease;
+}
+
+.btn-secondary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(245, 87, 108, 0.4);
+}
+
+.log-container {
+    background: #1a1a1a;
+    color: #00ff88;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.log-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.log-container::-webkit-scrollbar-track {
+    background: #2a2a2a;
+}
+
+.log-container::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 4px;
+}
+
+.log-container::-webkit-scrollbar-thumb:hover {
+    background: #777;
+}
+
+.feature-card {
+    transition: all 0.3s ease;
+}
+
+.feature-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+}
+
+.domain-card {
+    transition: all 0.2s ease;
+}
+
+.domain-card:hover {
+    background: #f8f9ff !important;
+    transform: scale(1.02);
+}
+
+.fade-in {
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* 滚动条美化 */
+#timeline::-webkit-scrollbar {
+    width: 8px;
+}
+#timeline::-webkit-scrollbar-thumb {
+    background: #e5e7eb;
+    border-radius: 4px;
+}
+#timeline::-webkit-scrollbar-track {
+    background: #fff;
+}
+</style>
+</head>
+<body class="min-h-screen py-8 px-4">
+<div class="w-full max-w-6xl mx-auto space-y-6">
+    
+    <!-- 头部介绍区域 -->
+    <div class="glass-card rounded-2xl p-8 fade-in">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div class="text-center md:text-left">
+                <h1 class="text-5xl font-bold gradient-text mb-3">Notion Hosts 管理器</h1>
+                <p class="text-gray-600 text-lg">智能加速 Notion 访问，自动选择最快 IP</p>
+                <div class="flex flex-wrap gap-3 mt-4 justify-center md:justify-start">
+                    <span class="px-3 py-1 rounded-full text-sm bg-gradient-to-r from-green-100 to-green-200 text-green-800 flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 bg-green-500 rounded-full status-badge"></span> 服务运行中
+                    </span>
+                    <span class="px-3 py-1 rounded-full text-sm bg-gradient-to-r from-indigo-100 to-indigo-200 text-indigo-800 flex items-center gap-2">
+                        ⚡ 自动检测 / 手动触发
+                    </span>
+                    <span class="px-3 py-1 rounded-full text-sm bg-gradient-to-r from-amber-100 to-amber-200 text-amber-800 flex items-center gap-2">
+                        🛡️ hosts 自动备份
+                    </span>
+                </div>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                <div class="flex-1 sm:flex-none sm:w-48 p-4 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-lg">
+                    <div class="text-sm text-white/80 mb-1">运行状态</div>
+                    {% if status.last_run %}
+                    <div class="text-xl font-bold flex items-center gap-2">在线 <span class="w-2 h-2 bg-emerald-300 rounded-full status-badge"></span></div>
+                    <div class="text-xs text-white/80 mt-1">最近检测：{{ status.last_run }}</div>
+                    {% else %}
+                    <div class="text-xl font-bold flex items-center gap-2">待检测 <span class="w-2 h-2 bg-amber-300 rounded-full status-badge"></span></div>
+                    <div class="text-xs text-white/80 mt-1">尚未执行检测</div>
+                    {% endif %}
+                </div>
+                <div class="flex-1 sm:flex-none sm:w-48 p-4 rounded-2xl bg-white/70 border border-white/60 shadow-lg">
+                    <div class="text-sm text-gray-600 mb-1">当前 IP</div>
+                    {% if status.last_ip %}
+                    <div class="text-2xl font-bold text-gray-900">{{ status.last_ip }}</div>
+                    <div class="mt-2 flex items-center gap-2 text-xs text-gray-600">
+                        <span class="w-2.5 h-2.5 bg-emerald-500 rounded-full status-badge"></span> 加速生效
+                    </div>
+                    {% else %}
+                    <div class="text-lg font-semibold text-amber-700">未检测</div>
+                    <p class="text-xs text-gray-600 mt-2">点击“手动触发”立即检测</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- 功能介绍 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
+            <div class="feature-card bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 border border-blue-100">
+                <div class="text-3xl mb-3">🚀</div>
+                <h3 class="font-semibold text-gray-800 mb-2">自动检测</h3>
+                <p class="text-sm text-gray-600">自动测试多个 IP 地址，智能选择延迟最低的节点</p>
+            </div>
+            <div class="feature-card bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-5 border border-purple-100">
+                <div class="text-3xl mb-3">⚡</div>
+                <h3 class="font-semibold text-gray-800 mb-2">实时更新</h3>
+                <p class="text-sm text-gray-600">支持定时自动检测，保持最佳访问速度</p>
+            </div>
+            <div class="feature-card bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 border border-green-100">
+                <div class="text-3xl mb-3">🛡️</div>
+                <h3 class="font-semibold text-gray-800 mb-2">安全可靠</h3>
+                <p class="text-sm text-gray-600">自动备份 hosts 文件，操作安全有保障</p>
+            </div>
+        </div>
+
+        <!-- 当前状态 -->
+        {% if status.last_ip %}
+        <div class="mt-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200">
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="status-badge w-3 h-3 bg-green-500 rounded-full"></span>
+                        <span class="font-semibold text-gray-800">当前使用 IP</span>
+                    </div>
+                    <p class="text-2xl font-bold text-gray-900">{{ status.last_ip }}</p>
+                    {% if status.last_run %}
+                    <p class="text-sm text-gray-600 mt-1">最后更新: {{ status.last_run }}</p>
+                    {% endif %}
+                </div>
+                <div class="text-4xl">✅</div>
+            </div>
+        </div>
+        {% else %}
+        <div class="mt-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl border border-yellow-200">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="font-semibold text-gray-800 mb-1">尚未执行检测</p>
+                    <p class="text-sm text-gray-600">点击"手动触发"按钮开始检测最快 IP</p>
+                </div>
+                <div class="text-4xl">⏳</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- IP 配置卡片 -->
+    <div class="glass-card rounded-2xl p-6 fade-in">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">1</div>
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">IP 地址列表</h2>
+                <p class="text-gray-600 text-sm">每行输入一个 IP 地址，程序会自动测试这些 IP 的可用性和延迟</p>
+            </div>
+        </div>
+        <textarea id="ips" class="w-full h-40 p-4 border-2 border-gray-200 rounded-xl font-mono text-sm resize-none focus:border-indigo-500 transition-colors" placeholder="例如：&#10;119.28.13.121&#10;154.40.44.47&#10;101.32.183.34">{{ ips|join('\n') }}</textarea>
+        <p class="text-xs text-gray-500 mt-2 flex items-center gap-1">
+            <span>💡</span>
+            <span>建议添加多个 IP 地址以提高检测成功率，程序会选择延迟最低的 IP</span>
+        </p>
+    </div>
+
+    <!-- 域名配置卡片 -->
+    <div class="glass-card rounded-2xl p-6 fade-in">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">2</div>
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">域名配置</h2>
+                <p class="text-gray-600 text-sm">选择需要加速的 Notion 相关域名，勾选的域名将被添加到 hosts 文件</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {% for d in domains %}
+            <div class="domain-card flex items-start justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <div class="flex items-start gap-3 flex-1">
+                    <input type="checkbox" id="dom_{{ loop.index }}" class="mt-1 w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer" {% if d.checked %}checked{% endif %} value="{{ d.name }}">
+                    <div class="flex-1">
+                        <label class="font-semibold text-gray-800 cursor-pointer block" for="dom_{{ loop.index }}">{{ d.name }}</label>
+                        {% if d.desc %}
+                        <p class="text-xs text-gray-500 mt-1">{{ d.desc }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+    </div>
+
+    <!-- 自动检测配置卡片 -->
+    <div class="glass-card rounded-2xl p-6 fade-in">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">3</div>
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">自动检测设置</h2>
+                <p class="text-gray-600 text-sm">设置自动检测间隔，程序会定期检测并更新到最快的 IP</p>
+            </div>
+        </div>
+        <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+            <div class="flex items-center gap-4">
+                <label class="font-semibold text-gray-800 whitespace-nowrap">检测间隔（秒）:</label>
+                <input type="number" id="interval" value="{{ interval }}" min="0" class="w-32 p-3 border-2 border-gray-300 rounded-lg font-semibold text-center focus:border-indigo-500 transition-colors">
+                <span class="text-sm text-gray-600">设置为 0 表示禁用自动检测</span>
+            </div>
+            <div class="flex gap-3 w-full md:w-auto">
+                <button class="btn-primary text-white font-semibold px-8 py-3 rounded-xl flex-1 md:flex-none" onclick="saveConfig()">
+                    💾 保存配置
+                </button>
+                <button class="btn-secondary text-white font-semibold px-8 py-3 rounded-xl flex-1 md:flex-none" onclick="runNow()">
+                    ⚡ 手动触发
+                </button>
+            </div>
+        </div>
+        <div class="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+            <p class="text-sm text-gray-700 flex items-start gap-2">
+                <span class="text-lg">⚠️</span>
+                <span><strong>重要提示：</strong>修改 hosts 文件需要管理员权限。请确保以管理员身份运行此程序，否则无法更新 hosts 文件。</span>
+            </p>
+        </div>
+    </div>
+
+    <!-- 日志 / 状态卡片（新版美观展示） -->
+    <div class="glass-card rounded-2xl p-6 fade-in">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gradient-to-br from-gray-700 to-gray-900 rounded-lg flex items-center justify-center text-white font-bold text-lg">📋</div>
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-800">运行日志</h2>
+                    <p class="text-gray-600 text-sm">动态查看最近状态和历史详情</p>
+                </div>
+            </div>
+        </div>
+        <div>
+            <div class="font-semibold text-gray-700 mb-2 flex items-center gap-2 text-base"><span>🕒</span>最近 100 条事件</div>
+            <div id="timeline" class="flex flex-col gap-2 h-60 overflow-y-auto"></div>
+        </div>
+    </div>
+    <script id="logs-data" type="application/json">{{ status.logs|tojson }}</script>
+
+    <!-- 使用说明 -->
+    <div class="glass-card rounded-2xl p-6 fade-in">
+        <h3 class="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <span>📖</span>
+            <span>使用说明</span>
+        </h3>
+        <div class="space-y-3 text-sm text-gray-700">
+            <div class="flex items-start gap-3">
+                <span class="font-bold text-indigo-600">1.</span>
+                <p>在 IP 地址列表中添加需要测试的 IP 地址，每行一个</p>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="font-bold text-indigo-600">2.</span>
+                <p>勾选需要加速的 Notion 域名（建议至少勾选 www.notion.so）</p>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="font-bold text-indigo-600">3.</span>
+                <p>设置自动检测间隔（秒），0 表示禁用自动检测</p>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="font-bold text-indigo-600">4.</span>
+                <p>点击"保存配置"保存设置，点击"手动触发"立即检测并更新</p>
+            </div>
+            <div class="flex items-start gap-3">
+                <span class="font-bold text-indigo-600">5.</span>
+                <p>程序会自动备份 hosts 文件，更新前会创建备份文件</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 页脚 -->
+    <div class="text-center text-white/80 text-sm py-4">
+        <p>Notion Hosts 管理器 v1.0 | 让 Notion 访问更快更稳定</p>
+    </div>
+</div>
+
+<script>
+function saveConfig(){
+    let ips = document.getElementById("ips").value;
+    let interval = document.getElementById("interval").value;
+    let domains = [];
+    {% for d in domains %}
+    if(document.getElementById("dom_{{ loop.index }}").checked){
+        domains.push("{{ d.name }}");
+    }
+    {% endfor %}
+    
+    // 显示加载状态
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = "⏳ 保存中...";
+    btn.disabled = true;
+    
+    fetch("/save_config", {
+        method:"POST",
+        body: new URLSearchParams({
+            ips: ips,
+            domains: domains.join("\n"),
+            interval: interval
+        })
+    }).then(r=>r.json()).then(d=>{
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        showNotification(d.msg, "success");
+        // 延迟刷新页面以更新状态
+        setTimeout(() => location.reload(), 1000);
+    }).catch(err => {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        showNotification("保存失败: " + err.message, "error");
+    });
+}
+
+function runNow(){
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = "⏳ 检测中...";
+    btn.disabled = true;
+    
+    fetch("/run_now", {method:"POST"}).then(r=>r.json()).then(d=>{
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        if(d.fastest_ip) {
+            showNotification("检测完成！最快 IP: " + d.fastest_ip, "success");
+        } else {
+            showNotification("检测完成，但未找到可用 IP", "warning");
+        }
+        if(Array.isArray(d.logs)) {
+            window.__logsData = d.logs;
+            renderTimeline();
+        }
+        // 延迟刷新页面以更新状态
+        setTimeout(() => location.reload(), 1500);
+    }).catch(err => {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        showNotification("检测失败: " + err.message, "error");
+    });
+}
+
+function showNotification(message, type = "success") {
+    const notification = document.createElement("div");
+    notification.className = `fixed top-4 right-4 px-6 py-4 rounded-xl shadow-lg z-50 fade-in ${
+        type === "success" ? "bg-green-500 text-white" : 
+        type === "error" ? "bg-red-500 text-white" : 
+        "bg-yellow-500 text-white"
+    }`;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.opacity = "0";
+        notification.style.transition = "opacity 0.3s";
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}
+
+// 自动刷新日志和状态
+setInterval(()=>{
+    fetch("/").then(r=>r.text()).then(html=>{
+        let div = document.createElement('div'); 
+        div.innerHTML = html;
+        let logsScript = div.querySelector('#logs-data');
+        if(logsScript && logsScript.textContent) {
+            try{
+                window.__logsData = JSON.parse(logsScript.textContent);
+                renderTimeline();
+            }catch(e){}
+        }
+    });
+}, 5000);
+
+// 页面加载动画
+document.addEventListener('DOMContentLoaded', function() {
+    const cards = document.querySelectorAll('.fade-in');
+    cards.forEach((card, index) => {
+        setTimeout(() => {
+            card.style.opacity = '1';
+        }, index * 100);
+    });
+
+    const logsScript = document.getElementById('logs-data');
+    if(logsScript && logsScript.textContent) {
+        try{
+            window.__logsData = JSON.parse(logsScript.textContent);
+        }catch(e){
+            window.__logsData = [];
+        }
+    } else {
+        window.__logsData = [];
+    }
+    renderTimeline();
+});
+
+// 根据日志动态生成「最近事件」时间线
+function renderTimeline() {
+    const timeline = document.getElementById('timeline');
+    if(!timeline) return;
+
+    const lines = (window.__logsData || [])
+        .filter(line => typeof line === 'string' && line.trim())
+        .slice(-100)  // 取最近 100 条
+        .reverse();  // 最新在上
+
+    const levelMap = [
+        { match: ['✅','可用','已更新','成功'], color: 'bg-green-50 border-green-200 text-green-700', icon: '✅' },
+        { match: ['⚠','警告','注意'], color: 'bg-yellow-50 border-yellow-200 text-yellow-700', icon: '⚠️' },
+        { match: ['❌','失败','错误','不可用','异常'], color: 'bg-red-50 border-red-200 text-red-700', icon: '❌' },
+        { match: ['自动任务','触发'], color: 'bg-blue-50 border-blue-200 text-blue-700', icon: '🕒' },
+    ];
+
+    const fragments = lines.map(line => {
+        const level = levelMap.find(l => l.match.some(k => line.includes(k)));
+        const color = level ? level.color : 'bg-gray-50 border-gray-200 text-gray-700';
+        const icon = level ? level.icon : 'ℹ️';
+
+        // 拆分日志行为时间戳和内容(假定格式: [时间]内容)优化
+        let timeHtml = "";
+        let contentHtml = line;
+        let match = line.match(/^\s*\[([^\]]{6,})\]\s*(.*)$/);
+        if(match){
+           timeHtml = `<span class="min-w-[110px] mr-2 text-xs text-gray-400 font-mono">${match[1]}</span>`;
+           contentHtml = match[2];
+        }
+
+        return `
+            <div class="border ${color} rounded-xl px-4 py-2 flex items-start gap-2 shadow-sm">
+                <div class="text-xl leading-none pt-1">${icon}</div>
+                <div class="flex flex-col min-w-0">
+                   ${timeHtml ? '<div>' + timeHtml + '</div>' : ''}
+                   <div class="text-sm leading-5 break-all">${contentHtml}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    timeline.innerHTML = fragments || '<p class="text-gray-500 text-sm">暂无日志</p>';
+}
+</script>
+</body>
+</html>
