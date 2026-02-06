@@ -4,6 +4,8 @@ import datetime
 import os
 import socket
 import ssl
+import json
+import concurrent.futures
 from pathlib import Path
 import shutil
 import sqlite3
@@ -52,11 +54,11 @@ DEFAULT_IPS = [
 
 # 默认域名列表
 DEFAULT_DOMAINS = [
-    {"name": "www.notion.so", "checked": True},
-    {"name": "msgstore.www.notion.so", "checked": True},
-    {"name": "api.pgncs.notion.so", "checked": False},
-    {"name": "exp.notion.so", "checked": False},
-    {"name": "s3.us-west-2.amazonaws.com", "checked": False},
+    {"name": "www.notion.so", "checked": True, "desc": "Notion 主站网页访问入口"},
+    {"name": "msgstore.www.notion.so", "checked": True, "desc": "消息/通知/同步服务"},
+    {"name": "api.pgncs.notion.so", "checked": False, "desc": "Notion API 接口"},
+    {"name": "exp.notion.so", "checked": False, "desc": "实验 / Beta 功能"},
+    {"name": "s3.us-west-2.amazonaws.com", "checked": False, "desc": "图片/附件/导出文件存储"},
 ]
 
 # 默认检测间隔 0
@@ -135,14 +137,62 @@ def https_check_and_latency(ip, domain, timeout=3):
     except:
         return False, None
 
-def test_ip(ip, domains):
-    latencies = []
-    for domain in domains:
-        ok, latency = https_check_and_latency(ip, domain)
-        if not ok:
-            return None
-        latencies.append(latency)
-    return sum(latencies) / len(latencies)
+def test_ip_for_domain(ip, domain, timeout=3):
+    ok, latency = https_check_and_latency(ip, domain, timeout=timeout)
+    return latency if ok else None
+
+def _normalize_lines(text: str):
+    lines = []
+    for line in (text or "").splitlines():
+        s = line.strip()
+        if s:
+            lines.append(s)
+    # 去重但保留顺序
+    seen = set()
+    out = []
+    for x in lines:
+        if x in seen:
+            continue
+        seen.add(x)
+        out.append(x)
+    return out
+
+def pick_fastest_ip_per_domain(ips, domains, timeout=3, max_workers=24):
+    """
+    对每个 domain 单独测速，返回：
+    - fastest: {domain: (ip, latency_ms)}   (仅包含测速成功的域名)
+    - domain_latencies: {domain: {ip: latency_ms}}
+    """
+    ips = [ip.strip() for ip in ips if ip and ip.strip()]
+    domains = [d.strip() for d in domains if d and d.strip()]
+    domain_latencies = {d: {} for d in domains}
+    fastest = {}
+
+    if not ips or not domains:
+        return fastest, domain_latencies
+
+    # 线程池并发测速，避免串行太慢
+    workers = max(4, min(max_workers, len(ips) * len(domains)))
+
+    def _task(ip, domain):
+        latency = test_ip_for_domain(ip, domain, timeout=timeout)
+        return domain, ip, latency
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = [ex.submit(_task, ip, domain) for domain in domains for ip in ips]
+        for fut in concurrent.futures.as_completed(futures):
+            domain, ip, latency = fut.result()
+            if latency is None:
+                continue
+            domain_latencies.setdefault(domain, {})[ip] = latency
+
+    for domain, ip_map in domain_latencies.items():
+        if not ip_map:
+            continue
+        best_ip = min(ip_map, key=ip_map.get)
+        fastest[domain] = (best_ip, ip_map[best_ip])
+
+    return fastest, domain_latencies
 
 # ===================== hosts更新 =====================
 def backup_hosts():
@@ -151,11 +201,11 @@ def backup_hosts():
     shutil.copy(HOSTS_PATH, backup)
     log(f"hosts 已备份: {backup}")
 
-def update_hosts(ip, domains):
+def update_hosts(domain_to_ip):
     content = HOSTS_PATH.read_text(encoding="utf-8", errors="ignore")
     lines = content.splitlines()
     new_lines = []
-    domain_set = set(domains)
+    domain_set = set(domain_to_ip.keys())
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("# notion auto update"):
@@ -164,42 +214,84 @@ def update_hosts(ip, domains):
             new_lines.append(line)
             continue
         parts = stripped.split()
-        if len(parts) >= 2 and parts[1] in domain_set:
+        # hosts 可能一行多个域名：127.0.0.1 a b c
+        if len(parts) >= 2 and any(p in domain_set for p in parts[1:]):
             continue
         new_lines.append(line)
     new_lines.append("")
     new_lines.append(f"# notion auto update {datetime.datetime.now()}")
-    for domain in domains:
+    for domain, ip in domain_to_ip.items():
         new_lines.append(f"{ip} {domain}")
     HOSTS_PATH.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-    log(f"hosts 已更新, IP: {ip}")
+    log(f"hosts 已更新, 域名数: {len(domain_to_ip)}")
 
 # ===================== 执行检测更新 =====================
 def run_check_and_update(ips=None, domains=None):
     if ips is None:
-        ips = get_config("ips", "\n".join(DEFAULT_IPS)).splitlines()
+        ips = _normalize_lines(get_config("ips", "\n".join(DEFAULT_IPS)))
+    else:
+        ips = _normalize_lines("\n".join(ips) if isinstance(ips, (list, tuple)) else str(ips))
     if domains is None:
-        domains = [d for d in get_config("domains", "\n".join([d['name'] for d in DEFAULT_DOMAINS])).splitlines() if d.strip()]
+        # 只从配置里读取“已勾选”的域名；首次启动若无配置，则用默认勾选项
+        raw = get_config("domains", None)
+        if raw is None:
+            domains = [d["name"] for d in DEFAULT_DOMAINS if d.get("checked")]
+        else:
+            domains = _normalize_lines(raw)
+    else:
+        domains = _normalize_lines("\n".join(domains) if isinstance(domains, (list, tuple)) else str(domains))
     if not has_admin_privilege():
         log("❌ 请以管理员/ root 权限运行")
         return None
-    results = {}
-    for ip in ips:
-        avg = test_ip(ip, domains)
-        if avg is not None:
-            results[ip] = avg
-            log(f"IP {ip} 可用, 平均延迟 {avg:.1f} ms")
-        else:
-            log(f"IP {ip} 不可用")
-    if not results:
-        log("❌ 没有可用 IP")
+
+    if not ips:
+        log("❌ IP 列表为空")
         return None
-    fastest_ip = min(results, key=results.get)
+    if not domains:
+        log("❌ 未选择任何域名")
+        return None
+
+    # 读取上次结果，作为某些域名测速失败时的兜底
+    last_domain_ips_raw = get_config("last_domain_ips", "{}")
+    try:
+        last_domain_ips = json.loads(last_domain_ips_raw) if last_domain_ips_raw else {}
+        if not isinstance(last_domain_ips, dict):
+            last_domain_ips = {}
+    except Exception:
+        last_domain_ips = {}
+
+    fastest, domain_latencies = pick_fastest_ip_per_domain(ips, domains)
+
+    domain_to_ip = {}
+    for domain in domains:
+        if domain in fastest:
+            ip, latency = fastest[domain]
+            domain_to_ip[domain] = ip
+            log(f"域名 {domain} 最快 IP: {ip} ({latency:.1f} ms)")
+        else:
+            fallback = last_domain_ips.get(domain)
+            if fallback:
+                domain_to_ip[domain] = fallback
+                log(f"⚠️ 域名 {domain} 本次无可用 IP，沿用上次: {fallback}")
+            else:
+                log(f"❌ 域名 {domain} 本次无可用 IP，且无历史可用值")
+
+    if not domain_to_ip:
+        log("❌ 没有任何域名找到可用 IP")
+        return None
+
+    # 用主域名（优先 www.notion.so）作为“当前 IP”展示
+    if "www.notion.so" in domain_to_ip:
+        fastest_ip = domain_to_ip["www.notion.so"]
+    else:
+        fastest_ip = next(iter(domain_to_ip.values()))
+
     backup_hosts()
-    update_hosts(fastest_ip, domains)
+    update_hosts(domain_to_ip)
     set_config("last_ip", fastest_ip)
     set_config("last_run", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    return fastest_ip
+    set_config("last_domain_ips", json.dumps(domain_to_ip, ensure_ascii=False))
+    return domain_to_ip
 
 # ===================== FastAPI接口 =====================
 @app.on_event("startup")
@@ -229,17 +321,48 @@ def startup_event():
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     ip_config = get_config("ips", "\n".join(DEFAULT_IPS)).splitlines()
-    domain_config_raw = get_config("domains", "\n".join([d['name'] for d in DEFAULT_DOMAINS])).splitlines()
+
+    raw = get_config("domains", None)
+    if raw is None:
+        selected = set([d["name"] for d in DEFAULT_DOMAINS if d.get("checked")])
+    else:
+        selected = set(_normalize_lines(raw))
+
     domain_config = []
+    default_names = set()
     for d in DEFAULT_DOMAINS:
+        default_names.add(d["name"])
         domain_config.append({
-            "name": d['name'],
-            "checked": d['name'] in domain_config_raw or d['checked']
+            "name": d["name"],
+            "checked": d["name"] in selected,
+            "desc": d.get("desc", ""),
+            "is_custom": False,
         })
+
+    # 将用户自定义域名也渲染到页面（从配置中的“已勾选域名”推导）
+    for name in _normalize_lines("\n".join(sorted(selected))):
+        if name in default_names:
+            continue
+        domain_config.append({
+            "name": name,
+            "checked": True,
+            "desc": "自定义域名",
+            "is_custom": True,
+        })
+
+    # 读取每域名对应 IP 的结果用于展示
+    last_domain_ips_raw = get_config("last_domain_ips", "{}")
+    try:
+        last_domain_ips = json.loads(last_domain_ips_raw) if last_domain_ips_raw else {}
+        if not isinstance(last_domain_ips, dict):
+            last_domain_ips = {}
+    except Exception:
+        last_domain_ips = {}
     status = {
         "last_ip": get_config("last_ip",""),
         "last_run": get_config("last_run",""),
-        "logs": get_logs(200)
+        "logs": get_logs(200),
+        "domain_ips": last_domain_ips,
     }
     return templates.TemplateResponse("index.html", {"request": request, "ips": ip_config, "domains": domain_config, "status": status, "interval": get_config("interval", DEFAULT_INTERVAL)})
 
@@ -247,7 +370,7 @@ def index(request: Request):
 def save_config(ips: str = Form(...), domains: str = Form(...), interval: int = Form(...)):
     set_config("ips", ips.strip())
     # 只保存勾选域名
-    selected_domains = "\n".join([d.strip() for d in domains.strip().splitlines() if d.strip()])
+    selected_domains = "\n".join(_normalize_lines(domains))
     set_config("domains", selected_domains)
     set_config("interval", interval)
     return JSONResponse({"msg":"配置保存成功"})
@@ -255,7 +378,11 @@ def save_config(ips: str = Form(...), domains: str = Form(...), interval: int = 
 @app.post("/run_now")
 def run_now():
     fastest_ip = run_check_and_update()
-    return JSONResponse({"fastest_ip": fastest_ip, "logs": get_logs(200)})
+    # 兼容旧字段 fastest_ip（用于提示），同时返回每域名结果 domain_ips
+    if isinstance(fastest_ip, dict):
+        main_ip = fastest_ip.get("www.notion.so") or next(iter(fastest_ip.values()), None)
+        return JSONResponse({"fastest_ip": main_ip, "domain_ips": fastest_ip, "logs": get_logs(200)})
+    return JSONResponse({"fastest_ip": fastest_ip, "domain_ips": {}, "logs": get_logs(200)})
 
 if __name__ == "__main__":
     uvicorn.run(
